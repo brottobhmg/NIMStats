@@ -113,7 +113,6 @@ def call_model(model: str, prompt: str) -> dict[str, Any]:
             time_to_first_token_ms: int | None = None
             completion_tokens = 0
             total_tokens = 0
-            streaming_chunks = 0
 
             for raw_line in response:
                 line = raw_line.decode("utf-8", errors="replace").strip()
@@ -136,20 +135,19 @@ def call_model(model: str, prompt: str) -> dict[str, Any]:
                         if time_to_first_token_ms is None:
                             time_to_first_token_ms = int((time.perf_counter() - started) * 1000)
                         content_parts.append(text)
-                        streaming_chunks += 1
 
                 usage = chunk.get("usage") if isinstance(chunk.get("usage"), dict) else {}
                 if usage:
                     completion_tokens = to_int(usage.get("completion_tokens"))
                     total_tokens = to_int(usage.get("total_tokens"))
 
-            # If the API didn't return usage info (common in streaming),
-            # fall back to counting streaming content chunks as tokens
-            if completion_tokens == 0 and streaming_chunks > 0:
-                completion_tokens = streaming_chunks
-
             response_time = int((time.perf_counter() - started) * 1000)
             content = "".join(content_parts)
+
+            # If the API didn't return usage info (common in streaming),
+            # estimate tokens from the response text (~4 chars ≈ 1 token)
+            if completion_tokens == 0 and content.strip():
+                completion_tokens = max(1, round(len(content) / 4))
 
     except urllib.error.HTTPError as exc:
         status_code = getattr(exc, "code", 0) or 0
